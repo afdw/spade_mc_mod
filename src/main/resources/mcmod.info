@@ -1,0 +1,16 @@
+[
+{
+  "modid": "spade_mc_mod",
+  "name": "spade_mc_mod",
+  "description": "spade_mc_mod",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["spade_mc_mod"],
+  "credits": "spade_mc_mod",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
