@@ -30,10 +30,10 @@ ofRainSplash:true
 ofLagometer:false
 ofShowFps:false
 ofAutoSaveTicks:4000
-ofBetterGrass:3
+ofBetterGrass:2
 ofConnectedTextures:2
 ofWeather:true
-ofSky:false
+ofSky:true
 ofStars:false
 ofSunMoon:false
 ofVignette:1

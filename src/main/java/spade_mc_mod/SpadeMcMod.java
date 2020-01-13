@@ -6,13 +6,20 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.texture.TextureUtil;
 import net.minecraft.client.settings.GameSettings;
 import net.minecraft.client.shader.Framebuffer;
+import net.minecraft.init.Blocks;
 import net.minecraft.world.WorldProvider;
 import net.minecraftforge.client.IRenderHandler;
+import net.minecraftforge.client.event.ColorHandlerEvent;
+import net.minecraftforge.client.event.EntityViewRenderEvent;
+import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.living.LivingSpawnEvent;
+import net.minecraftforge.event.terraingen.BiomeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.Mod.EventHandler;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -24,6 +31,9 @@ import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL14;
 
 import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.geom.AffineTransform;
+import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -100,6 +110,11 @@ public class SpadeMcMod {
     }
 
     @SubscribeEvent
+    public void onLivingSpawnCheckSpawn(LivingSpawnEvent.CheckSpawn event) {
+        event.setResult(Event.Result.DENY);
+    }
+
+    @SubscribeEvent
     public void clientTick(TickEvent.ClientTickEvent event) {
         if (Minecraft.getMinecraft().player != null && Minecraft.getMinecraft().player.world != null) {
             WorldProvider worldProvider = Minecraft.getMinecraft().player.world.provider;
@@ -112,6 +127,49 @@ public class SpadeMcMod {
                 }
             });
         }
+    }
+
+    @SubscribeEvent
+    public void onBiomeColor(BiomeEvent.BiomeColor event) {
+        event.setNewColor(0xFFFFFF);
+    }
+
+    @SubscribeEvent
+    public void onBiomeGetFoliageColor(BiomeEvent.GetFoliageColor event) {
+        event.setNewColor(0xFFFFFF);
+    }
+
+    @SubscribeEvent
+    public void onBiomeGetGrassColor(BiomeEvent.GetGrassColor event) {
+        event.setNewColor(0xFFFFFF);
+    }
+
+    @SubscribeEvent
+    public void onColorHandlerBlock(ColorHandlerEvent.Block event) {
+        event.getBlockColors().registerBlockColorHandler((state, world, pos, tintIndex) -> 0xFFFFFF, Blocks.WATERLILY);
+    }
+
+    @SubscribeEvent
+    public void onRenderGameOverlay(RenderGameOverlayEvent.Pre event) {
+        if (event.getType() == RenderGameOverlayEvent.ElementType.AIR) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public void onEntityViewRenderFogDensity(EntityViewRenderEvent.FogDensity event) {
+        event.setDensity(0);
+        event.setCanceled(true);
+    }
+
+    private static BufferedImage scale(BufferedImage before, int width, int height, int interpolationType) {
+        BufferedImage after = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        AffineTransform scaleInstance = AffineTransform.getScaleInstance((double) width / before.getWidth(), (double) height / before.getHeight());
+        AffineTransformOp scaleOp = new AffineTransformOp(scaleInstance, interpolationType);
+        Graphics2D graphics = (Graphics2D) after.getGraphics();
+        graphics.drawImage(before, scaleOp, 0, 0);
+        graphics.dispose();
+        return after;
     }
 
     @SubscribeEvent
@@ -140,6 +198,7 @@ public class SpadeMcMod {
         BufferedImage bufferedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         bufferedImage.setRGB(0, 0, width, height, pixelValues, 0, width);
 
+        bufferedImage = scale(bufferedImage, 256, 256, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
         try {
             ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
             ImageIO.write(bufferedImage, "png", byteArrayOutputStream);
@@ -178,6 +237,7 @@ public class SpadeMcMod {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        bufferedImage = scale(bufferedImage, width, height, AffineTransformOp.TYPE_BILINEAR);
 
         bufferedImage.getRGB(0, 0, width, height, pixelValues, 0, width);
         TextureUtil.processPixelValues(pixelValues, width, height);
