@@ -27,24 +27,24 @@ import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
+import org.apache.commons.io.IOUtils;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.geom.AffineTransform;
-import java.awt.image.AffineTransformOp;
-import java.awt.image.BufferedImage;
-import java.io.*;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystem;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
@@ -79,12 +79,16 @@ public class SpadeMcMod {
     }
 
     @EventHandler
-    public void preInit(FMLPreInitializationEvent event) throws IOException, URISyntaxException {
+    public void preInit(FMLPreInitializationEvent event) {
         MinecraftForge.EVENT_BUS.register(this);
-        copyFromJar("/spade_mc", Minecraft.getMinecraft().getResourcePackRepository().getDirResourcepacks().toPath().resolve("spade_mc"));
-        Path optifineOptions = Minecraft.getMinecraft().mcDataDir.toPath().resolve("optionsof.txt");
-        if (!Files.exists(optifineOptions)) {
-            Files.copy(getClass().getResource("/optionsof.txt").openStream(), optifineOptions, StandardCopyOption.REPLACE_EXISTING);
+        try {
+            copyFromJar("/spade_mc", Minecraft.getMinecraft().getResourcePackRepository().getDirResourcepacks().toPath().resolve("spade_mc"));
+            Path optifineOptions = Minecraft.getMinecraft().mcDataDir.toPath().resolve("optionsof.txt");
+            if (!Files.exists(optifineOptions)) {
+                Files.copy(getClass().getResource("/optionsof.txt").openStream(), optifineOptions, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
         GameSettings gameSettings = Minecraft.getMinecraft().gameSettings;
         boolean changed = false;
@@ -157,48 +161,38 @@ public class SpadeMcMod {
         event.setCanceled(true);
     }
 
-    private static BufferedImage scale(BufferedImage before, int width, int height, int interpolationType) {
-        BufferedImage after = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        AffineTransform scaleInstance = AffineTransform.getScaleInstance((double) width / before.getWidth(), (double) height / before.getHeight());
-        AffineTransformOp scaleOp = new AffineTransformOp(scaleInstance, interpolationType);
-        Graphics2D graphics = (Graphics2D) after.getGraphics();
-        graphics.drawImage(before, scaleOp, 0, 0);
-        graphics.dispose();
-        return after;
-    }
-
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
         if (!enabled) {
             return;
         }
 
-        Framebuffer framebuffer = Minecraft.getMinecraft().getFramebuffer();
-        int width = framebuffer.framebufferTextureWidth;
-        int height = framebuffer.framebufferTextureHeight;
-        int cropSize = 256;
-
-        if (pixelBuffer == null || pixelBuffer.capacity() < width * height) {
-            pixelBuffer = BufferUtils.createIntBuffer(width * height);
-            pixelValues = new int[width * height];
-        }
-
-        GlStateManager.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
-        GlStateManager.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
-        GlStateManager.bindTexture(framebuffer.framebufferTexture);
-
-        pixelBuffer.clear();
-        GlStateManager.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, pixelBuffer);
-        pixelBuffer.get(pixelValues);
-        TextureUtil.processPixelValues(pixelValues, width, height);
-        BufferedImage bufferedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        bufferedImage.setRGB(0, 0, width, height, pixelValues, 0, width);
-        bufferedImage = scale(bufferedImage, cropSize, cropSize, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
-
         try {
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            ImageIO.write(bufferedImage, "bmp", byteArrayOutputStream);
-            ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(byteArrayOutputStream.toByteArray());
+            Framebuffer framebuffer = Minecraft.getMinecraft().getFramebuffer();
+            int width = framebuffer.framebufferTextureWidth;
+            int height = framebuffer.framebufferTextureHeight;
+            int cropSize = 256;
+
+            if (pixelBuffer == null || pixelBuffer.capacity() < width * height) {
+                pixelBuffer = BufferUtils.createIntBuffer(width * height);
+                pixelValues = new int[width * height];
+            }
+
+            GlStateManager.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
+            GlStateManager.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+            GlStateManager.bindTexture(framebuffer.framebufferTexture);
+
+            pixelBuffer.clear();
+            GlStateManager.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, pixelBuffer);
+            pixelBuffer.get(pixelValues);
+            TextureUtil.processPixelValues(pixelValues, width, height);
+            byte[] inputData = new byte[cropSize * cropSize];
+            for (int i = 0; i < cropSize; i++) {
+                for (int j = 0; j < cropSize; j++) {
+                    inputData[i + j * cropSize] = (byte) pixelValues[i * width / cropSize + j * height / cropSize * width];
+                }
+            }
+
             String boundary = "---" + System.currentTimeMillis() + "---";
             URL url = new URL("http://localhost:8000/");
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -206,6 +200,7 @@ public class SpadeMcMod {
             connection.setDoOutput(true);
             connection.setDoInput(true);
             connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+            connection.setRequestProperty("X-Raw", "true");
             OutputStream connectionOutputStream = connection.getOutputStream();
             PrintWriter writer = new PrintWriter(new OutputStreamWriter(connectionOutputStream, StandardCharsets.UTF_8), true);
             writer.append("--").append(boundary).append("\r\n");
@@ -213,58 +208,56 @@ public class SpadeMcMod {
             writer.append("Content-Type: image/png\r\n");
             writer.append("\r\n");
             writer.flush();
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            while ((bytesRead = byteArrayInputStream.read(buffer)) != -1) {
-                connectionOutputStream.write(buffer, 0, bytesRead);
-            }
-            connectionOutputStream.flush();
-            byteArrayInputStream.close();
-            writer.append("\r\n");
+            connectionOutputStream.write(inputData);
             writer.append("\r\n");
             writer.append("--").append(boundary).append("--").append("\r\n");
             writer.close();
             connectionOutputStream.close();
-            bufferedImage = ImageIO.read(connection.getInputStream());
-        } catch (IOException e) {
+            byte[] outputData = IOUtils.toByteArray(connection.getInputStream(), cropSize * cropSize * 4);
+
+            ResourceLocation spadeMcTexture = new ResourceLocation("spade_mc_texture");
+            Minecraft.getMinecraft().getTextureManager().deleteTexture(spadeMcTexture);
+            DynamicTexture dynamicTexture = new DynamicTexture(cropSize, cropSize);
+            ByteBuffer.wrap(outputData)
+                    .order(ByteOrder.BIG_ENDIAN)
+                    .asIntBuffer()
+                    .get(dynamicTexture.getTextureData(), 0, 256 * 256);
+            dynamicTexture.updateDynamicTexture();
+            dynamicTexture.setBlurMipmap(true, true);
+            Minecraft.getMinecraft().getTextureManager().loadTexture(spadeMcTexture, dynamicTexture);
+            Minecraft.getMinecraft().getTextureManager().bindTexture(spadeMcTexture);
+            GlStateManager.colorMask(true, true, true, false);
+            GlStateManager.disableDepth();
+            GlStateManager.depthMask(false);
+            GlStateManager.disableCull();
+            GlStateManager.matrixMode(GL11.GL_PROJECTION);
+            GlStateManager.loadIdentity();
+            GlStateManager.ortho(0, width, height, 0, 1000, 3000);
+            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+            GlStateManager.loadIdentity();
+            GlStateManager.translate(0, 0, -2000);
+            GlStateManager.translate((float) width / 2, (float) height / 2, 0);
+            GlStateManager.rotate(180, 1, 0, 0);
+            GlStateManager.translate((float) -width / 2, (float) -height / 2, 0);
+            GlStateManager.viewport(0, 0, width, height);
+            GlStateManager.enableTexture2D();
+            GlStateManager.disableLighting();
+            GlStateManager.disableAlpha();
+            GlStateManager.color(1, 1, 1, 1);
+            Tessellator tessellator = Tessellator.getInstance();
+            BufferBuilder bufferbuilder = tessellator.getBuffer();
+            bufferbuilder.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX_COLOR);
+            bufferbuilder.pos(0, height, 0).tex(0, 0).color(255, 255, 255, 255).endVertex();
+            bufferbuilder.pos(width, height, 0).tex(1, 0).color(255, 255, 255, 255).endVertex();
+            bufferbuilder.pos(width, 0, 0).tex(1, 1).color(255, 255, 255, 255).endVertex();
+            bufferbuilder.pos(0, 0, 0).tex(0, 1).color(255, 255, 255, 255).endVertex();
+            tessellator.draw();
+            GlStateManager.depthMask(true);
+            GlStateManager.enableDepth();
+            GlStateManager.colorMask(true, true, true, true);
+            GlStateManager.bindTexture(0);
+        } catch (Exception e) {
             e.printStackTrace();
         }
-
-        ResourceLocation spadeMcTexture = new ResourceLocation("spade_mc_texture");
-        Minecraft.getMinecraft().getTextureManager().deleteTexture(spadeMcTexture);
-        DynamicTexture dynamicTexture = new DynamicTexture(bufferedImage);
-        dynamicTexture.setBlurMipmap(true, true);
-        Minecraft.getMinecraft().getTextureManager().loadTexture(spadeMcTexture, dynamicTexture);
-        Minecraft.getMinecraft().getTextureManager().bindTexture(spadeMcTexture);
-        GlStateManager.colorMask(true, true, true, false);
-        GlStateManager.disableDepth();
-        GlStateManager.depthMask(false);
-        GlStateManager.disableCull();
-        GlStateManager.matrixMode(GL11.GL_PROJECTION);
-        GlStateManager.loadIdentity();
-        GlStateManager.ortho(0, width, height, 0, 1000, 3000);
-        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-        GlStateManager.loadIdentity();
-        GlStateManager.translate(0, 0, -2000);
-        GlStateManager.translate((float) width / 2, (float) height / 2, 0);
-        GlStateManager.rotate(180, 1, 0, 0);
-        GlStateManager.translate((float) -width / 2, (float) -height / 2, 0);
-        GlStateManager.viewport(0, 0, width, height);
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.disableAlpha();
-        GlStateManager.color(1, 1, 1, 1);
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder bufferbuilder = tessellator.getBuffer();
-        bufferbuilder.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX_COLOR);
-        bufferbuilder.pos(0, height, 0).tex(0, 0).color(255, 255, 255, 255).endVertex();
-        bufferbuilder.pos(width, height, 0).tex(1, 0).color(255, 255, 255, 255).endVertex();
-        bufferbuilder.pos(width, 0, 0).tex(1, 1).color(255, 255, 255, 255).endVertex();
-        bufferbuilder.pos(0, 0, 0).tex(0, 1).color(255, 255, 255, 255).endVertex();
-        tessellator.draw();
-        GlStateManager.depthMask(true);
-        GlStateManager.enableDepth();
-        GlStateManager.colorMask(true, true, true, true);
-        GlStateManager.bindTexture(0);
     }
 }
