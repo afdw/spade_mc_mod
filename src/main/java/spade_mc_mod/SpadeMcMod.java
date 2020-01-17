@@ -192,7 +192,7 @@ public class SpadeMcMod {
             }
 
             String boundary = "---" + System.currentTimeMillis() + "---";
-            URL url = new URL("http://localhost:8000/");
+            URL url = new URL(System.getProperty("spade_mc.url", "http://localhost:8000/"));
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setUseCaches(false);
             connection.setDoOutput(true);
