@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.TextureUtil;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+import net.minecraft.client.resources.ResourcePackRepository;
 import net.minecraft.client.settings.GameSettings;
 import net.minecraft.client.shader.Framebuffer;
 import net.minecraft.init.Blocks;
@@ -17,9 +18,11 @@ import net.minecraftforge.client.IRenderHandler;
 import net.minecraftforge.client.event.ColorHandlerEvent;
 import net.minecraftforge.client.event.EntityViewRenderEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
+import net.minecraftforge.client.resource.ReloadRequirements;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingSpawnEvent;
 import net.minecraftforge.event.terraingen.BiomeEvent;
+import net.minecraftforge.fml.client.FMLClientHandler;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.Mod.EventHandler;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
@@ -27,6 +30,7 @@ import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 import org.apache.commons.io.IOUtils;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.input.Keyboard;
@@ -81,33 +85,43 @@ public class SpadeMcMod {
         MinecraftForge.EVENT_BUS.register(this);
         try {
             copyFromJar("/spade_mc", Minecraft.getMinecraft().getResourcePackRepository().getDirResourcepacks().toPath().resolve("spade_mc"));
-            Path optifineOptions = Minecraft.getMinecraft().mcDataDir.toPath().resolve("optionsof.txt");
-            if (!Files.exists(optifineOptions)) {
-                Files.copy(getClass().getResource("/optionsof.txt").openStream(), optifineOptions, StandardCopyOption.REPLACE_EXISTING);
-            }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        GameSettings gameSettings = Minecraft.getMinecraft().gameSettings;
-        boolean changed = false;
-        if (gameSettings.ambientOcclusion != 0) {
-            gameSettings.ambientOcclusion = 0;
-            changed = true;
-        }
-        if (gameSettings.fancyGraphics) {
-            gameSettings.fancyGraphics = false;
-            changed = true;
-        }
-        if (gameSettings.clouds != 0) {
-            gameSettings.clouds = 0;
-            changed = true;
-        }
-        if (Minecraft.getMinecraft().gameSettings.resourcePacks.isEmpty()) {
-            Minecraft.getMinecraft().gameSettings.resourcePacks.add("spade_mc");
-        }
-        if (changed) {
-            gameSettings.saveOptions();
-        }
+    }
+
+    @SubscribeEvent
+    public void onClientConnectedToServer(FMLNetworkEvent.ClientConnectedToServerEvent event) {
+        Minecraft.getMinecraft().addScheduledTask(() -> {
+            GameSettings gameSettings = Minecraft.getMinecraft().gameSettings;
+            boolean changed = false;
+            if (gameSettings.ambientOcclusion != 0) {
+                gameSettings.ambientOcclusion = 0;
+                changed = true;
+            }
+            if (gameSettings.fancyGraphics) {
+                gameSettings.fancyGraphics = false;
+                changed = true;
+            }
+            if (gameSettings.clouds != 0) {
+                gameSettings.clouds = 0;
+                changed = true;
+            }
+            if (gameSettings.resourcePacks.isEmpty()) {
+                for (ResourcePackRepository.Entry entry : Minecraft.getMinecraft().getResourcePackRepository().getRepositoryEntriesAll()) {
+                    if (entry.getResourcePackName().equals("spade_mc")) {
+                        Minecraft.getMinecraft().getResourcePackRepository().setRepositories(Collections.singletonList(entry));
+                        break;
+                    }
+                }
+                gameSettings.resourcePacks.add("spade_mc");
+                changed = true;
+            }
+            if (changed) {
+                gameSettings.saveOptions();
+                FMLClientHandler.instance().refreshResources(ReloadRequirements.all());
+            }
+        });
     }
 
     @SubscribeEvent
