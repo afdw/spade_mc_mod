@@ -98,6 +98,10 @@ public class SpadeMcMod {
             gameSettings.fancyGraphics = false;
             changed = true;
         }
+        if (gameSettings.clouds != 0) {
+            gameSettings.clouds = 0;
+            changed = true;
+        }
         if (Minecraft.getMinecraft().gameSettings.resourcePacks.isEmpty()) {
             Minecraft.getMinecraft().gameSettings.resourcePacks.add("spade_mc");
         }
