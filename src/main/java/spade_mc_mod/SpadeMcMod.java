@@ -33,10 +33,7 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -45,6 +42,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
@@ -201,19 +199,22 @@ public class SpadeMcMod {
             connection.setDoInput(true);
             connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
             connection.setRequestProperty("X-Raw", "true");
-            OutputStream connectionOutputStream = connection.getOutputStream();
-            PrintWriter writer = new PrintWriter(new OutputStreamWriter(connectionOutputStream, StandardCharsets.UTF_8), true);
-            writer.append("--").append(boundary).append("\r\n");
-            writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"in.png\"\r\n");
-            writer.append("Content-Type: image/png\r\n");
-            writer.append("\r\n");
-            writer.flush();
-            connectionOutputStream.write(inputData);
-            writer.append("\r\n");
-            writer.append("--").append(boundary).append("--").append("\r\n");
-            writer.close();
-            connectionOutputStream.close();
-            byte[] outputData = IOUtils.toByteArray(connection.getInputStream(), cropSize * cropSize * 4);
+            try (OutputStream connectionOutputStream = connection.getOutputStream()) {
+                try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(connectionOutputStream, StandardCharsets.UTF_8))) {
+                    writer.append("--").append(boundary).append("\r\n");
+                    writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"in.raw\"\r\n");
+                    writer.append("Content-Type: image/raw\r\n");
+                    writer.append("\r\n");
+                    writer.flush();
+                    connectionOutputStream.write(inputData);
+                    writer.append("\r\n");
+                    writer.append("--").append(boundary).append("--").append("\r\n");
+                }
+            }
+            byte[] outputData;
+            try (InputStream connectionInputStream = connection.getInputStream()) {
+                outputData = IOUtils.toByteArray(connectionInputStream, cropSize * cropSize * 4);
+            }
 
             ResourceLocation spadeMcTexture = new ResourceLocation("spade_mc_texture");
             Minecraft.getMinecraft().getTextureManager().deleteTexture(spadeMcTexture);
